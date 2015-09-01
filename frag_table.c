@@ -1,6 +1,6 @@
 /*
  * frag_table.c : A fragment table for Rx pprocessing
- * 
+ *
  * Copyright 2015 Ryota Kawashima <kawa1983@ieee.org> Nagoya Institute of Technology
  *
  * This program is free software; you can redistribute it and/or modify
@@ -18,7 +18,7 @@
  * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
-
+#include <linux/version.h>
 #include <linux/netdevice.h>
 #include <linux/hashtable.h>
 #include "frag_table.h"
@@ -29,12 +29,19 @@ static DEFINE_HASHTABLE(fraginfo_hash, 16);
 struct sclp_fraginfo *find_fraginfo(__u32 key, __u32 id)
 {
     struct sclp_fraginfo *frag;
+#if LINUX_VERSION_CODE < KERNEL_VERSION(3,9,0)
     struct hlist_node *node;
 
     hash_for_each_possible(fraginfo_hash, frag, node, list, key) {
-	if (likely(frag->id == id))
-	    return frag;
+        if (likely(frag->id == id))
+            return frag;
     }
+#else
+    hash_for_each_possible(fraginfo_hash, frag, list, key) {
+        if (likely(frag->id == id))
+            return frag;
+    }
+#endif
     return NULL;
 }
 
@@ -46,7 +53,7 @@ void add_fraginfo(struct sclp_fraginfo *frag, __u32 key)
     old_node = fraginfo_hash[hash_min(key, HASH_BITS(fraginfo_hash))].first;
 
     if (unlikely(old_node))
-	delete_fraginfo(old_node);
+        delete_fraginfo(old_node);
 
     hash_add(fraginfo_hash, &frag->list, key);
 }
@@ -58,8 +65,8 @@ void delete_fraginfo(struct hlist_node *node)
 
     frag = container_of(node, struct sclp_fraginfo, list);
     if (likely(frag->skb)) {
-	kfree_skb(frag->skb);
-	frag->skb = NULL;
+        kfree_skb(frag->skb);
+        frag->skb = NULL;
     }
     hash_del(node);
     kfree(frag);
@@ -70,10 +77,9 @@ void delete_all_fraginfo(void)
 {
     int i;
     for (i = 0; i < HASH_SIZE(fraginfo_hash); i++) {
-	struct hlist_node *node = fraginfo_hash[i].first;
+        struct hlist_node *node = fraginfo_hash[i].first;
 
-	if (node)
-	    delete_fraginfo(node);
+        if (node)
+            delete_fraginfo(node);
     }
 }
-

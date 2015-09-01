@@ -43,13 +43,13 @@ EOF
 %build
 make
 
-
 %install
 export INSTALL_MOD_PATH=$RPM_BUILD_ROOT
 export INSTALL_MOD_DIR=extra/%{modname}
 
 make modules_install M="`pwd`"
 cp Module.symvers $INSTALL_MOD_PATH/lib/modules/`uname -r`/extra/%{modname}
+rm -f $RPM_BUILD_ROOT/lib/modules/`uname -r`/modules.*
 
 install -d %{buildroot}%{_sysconfdir}/depmod.d/
 install -m 644 %{modname}.conf %{buildroot}%{_sysconfdir}/depmod.d/
@@ -62,4 +62,3 @@ rm -rf $RPM_BUILD_ROOT
 %config /etc/depmod.d/%{modname}.conf
 /lib/modules/%{kversion}/extra/%{modname}/%{modname}.ko
 /lib/modules/%{kversion}/extra/%{modname}/Module.symvers
-

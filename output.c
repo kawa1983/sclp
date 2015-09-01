@@ -1,6 +1,6 @@
 /*
  * output.c : SCLP protocol
- * 
+ *
  * Copyright 2015 Ryota Kawashima <kawa1983@ieee.org> Nagoya Institute of Technology
  *
  * This program is free software; you can redistribute it and/or modify
@@ -37,9 +37,9 @@
 static void sclp_set_gso(struct sk_buff *skb, size_t l3_hlen, size_t mtu)
 {
     if (skb->sk->sk_family == AF_INET)
-	skb_shinfo(skb)->gso_type = SKB_GSO_TCPV4;
+        skb_shinfo(skb)->gso_type = SKB_GSO_TCPV4;
     else if (skb->sk->sk_family == AF_INET6)
-	skb_shinfo(skb)->gso_type = SKB_GSO_TCPV6;
+        skb_shinfo(skb)->gso_type = SKB_GSO_TCPV6;
     else
 	BUG_ON(1);
 
@@ -57,8 +57,8 @@ static void sclp_set_payload(struct sk_buff *skb, struct msghdr *msg, size_t len
     copied = 0;
 
     for (i = 0; i < msg->msg_iovlen; i++) {
-	memcpy(&skb->data[copied], msg->msg_iov[i].iov_base, msg->msg_iov[i].iov_len);
-	copied += msg->msg_iov[i].iov_len;
+        memcpy(&skb->data[copied], msg->msg_iov[i].iov_base, msg->msg_iov[i].iov_len);
+        copied += msg->msg_iov[i].iov_len;
     }
 }
 
@@ -86,19 +86,20 @@ void sclp_set_header(struct sk_buff *skb, __be16 dport, __be16 sport, size_t l3_
     sclp_set_first_segment(sclph);
 
     if (skb->len + l3_hlen > mtu) {
-	sclp_set_gso(skb, l3_hlen, mtu);
-	skb->ip_summed = CHECKSUM_PARTIAL;
+        sclp_set_gso(skb, l3_hlen, mtu);
+        skb->ip_summed = CHECKSUM_PARTIAL;
     } else {
-	off_t offset = skb_transport_offset(skb);
-	sclph->check = csum_fold(skb_checksum(skb, offset, skb->len - offset, 0));
-	skb->ip_summed = CHECKSUM_UNNECESSARY;
+        off_t offset = skb_transport_offset(skb);
+        sclph->check = csum_fold(skb_checksum(skb, offset, skb->len - offset, 0));
+        skb->ip_summed = CHECKSUM_UNNECESSARY;
     }
 }
 
 
-int sclp_output(struct sock *sk, struct dst_entry *entry, __be16 dport, __be16 sport, 
-		size_t l3_hlen, struct msghdr *msg, size_t len,
-		int (*xmit_skb)(struct sk_buff *skb, struct sock *sk, struct dst_entry *entry))
+int sclp_output(struct sock *sk, struct dst_entry *entry, __be16 dport,
+                __be16 sport, size_t l3_hlen, struct msghdr *msg, size_t len,
+                int (*xmit_skb)(struct sk_buff *skb, struct sock *sk,
+                                void *argp), void *argp)
 {
     struct sk_buff *skb;
     size_t slen;
@@ -110,20 +111,20 @@ int sclp_output(struct sock *sk, struct dst_entry *entry, __be16 dport, __be16 s
 
     err = PTR_ERR(skb);
     if (!skb || IS_ERR(skb))
-	goto out;
+        goto out;
 
     skb_reserve(skb, slen - len);
 
     if (sk->sk_state != TCP_ESTABLISHED) {
-	skb_dst_drop(skb);
-	skb_dst_set(skb, dst_clone(entry));
+        skb_dst_drop(skb);
+        skb_dst_set(skb, dst_clone(entry));
     }
 
     sclp_set_payload(skb, msg, len);
 
     sclp_set_header(skb, dport, sport, l3_hlen, entry->dev->mtu);
 
-    err = xmit_skb(skb, sk, entry);
+    err = xmit_skb(skb, sk, argp);
 
 out:
     return err;

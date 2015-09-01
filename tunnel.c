@@ -1,6 +1,6 @@
 /*
  * tunnel.c : SCLP tunneling
- * 
+ *
  * Copyright 2015 Ryota Kawashima <kawa1983@ieee.org> Nagoya Institute of Technology
  *
  * This program is free software; you can redistribute it and/or modify
@@ -23,9 +23,12 @@
 #include <linux/errno.h>
 #include <linux/socket.h>
 #include <linux/sclp.h>
+
 #include <net/net_namespace.h>
 #include <net/sclp_tunnel.h>
+
 #include "sclp_impl.h"
+#include "compat.h"
 
 
 int sclp_sock_create4(struct net *net, struct sclp_port_cfg *cfg, struct socket **sockp)
@@ -36,7 +39,7 @@ int sclp_sock_create4(struct net *net, struct sclp_port_cfg *cfg, struct socket 
 
     err = sock_create_kern(AF_INET, SOCK_SCLP, 0, &sock);
     if (err < 0)
-	goto error;
+        goto error;
 
     sk_change_net(sock->sk, net);
 
@@ -46,15 +49,15 @@ int sclp_sock_create4(struct net *net, struct sclp_port_cfg *cfg, struct socket 
 
     err = kernel_bind(sock, (struct sockaddr*)&sclp_addr, sizeof(sclp_addr));
     if (err < 0)
-	goto error;
+        goto error;
 
     if (cfg->peer_sclp_port) {
-	sclp_addr.sin_family = AF_INET;
-	sclp_addr.sin_addr = cfg->peer_ip;
-	sclp_addr.sin_port = cfg->peer_sclp_port;
-	err = kernel_connect(sock, (struct sockaddr*)&sclp_addr, sizeof(sclp_addr), 0);
-	if (err < 0)
-	    goto error;
+        sclp_addr.sin_family = AF_INET;
+        sclp_addr.sin_addr = cfg->peer_ip;
+        sclp_addr.sin_port = cfg->peer_sclp_port;
+        err = kernel_connect(sock, (struct sockaddr*)&sclp_addr, sizeof(sclp_addr), 0);
+        if (err < 0)
+            goto error;
     }
 
     *sockp = sock;
@@ -62,8 +65,8 @@ int sclp_sock_create4(struct net *net, struct sclp_port_cfg *cfg, struct socket 
 
 error:
     if (sock) {
-	kernel_sock_shutdown(sock, SHUT_RDWR);
-	sk_release_kernel(sock->sk);
+        kernel_sock_shutdown(sock, SHUT_RDWR);
+        sk_release_kernel(sock->sk);
     }
     *sockp = NULL;
     return err;
@@ -84,21 +87,33 @@ void setup_sclp_tunnel_sock(struct net *net, struct socket *sock,
 EXPORT_SYMBOL(setup_sclp_tunnel_sock);
 
 
-int sclp_tunnel_xmit_skb(struct sk_buff *skb, struct rtable *rt, 
-			 __be32 daddr, __be32 saddr, __u8 tos, __u8 ttl, 
-			 __be16 df, __be16 dport, __be16 sport)
+int sclp_tunnel_xmit_skb(struct sk_buff *skb, struct rtable *rt,
+                         __be32 daddr, __be32 saddr, __u8 tos, __u8 ttl,
+                         __be16 df, __be16 dport, __be16 sport)
 {
-    struct iphdr *inner = NULL;
-
-    sclp_set_header(skb, dport, sport, sizeof(struct iphdr), rt->u.dst.dev->mtu);
+    sclp_set_header(skb, dport, sport, sizeof(struct iphdr), compat_rt_dst(rt).dev->mtu);
 
     skb->encapsulation = 0;
 
-    if (skb->protocol == htons(ETH_P_IP))
-	inner = ip_hdr(skb);
+#if !defined(RHEL_RELEASE_CODE)
+    return iptunnel_xmit(skb->sk, rt, skb, saddr, daddr,
+                         IPPROTO_SCLP, tos, ttl, df, false);
+#elif RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(7,0)
+    return iptunnel_xmit(skb->sk, rt, skb, saddr, daddr,
+                         IPPROTO_SCLP, tos, ttl, df);
+#else
+    {
+        struct iphdr *inner;
 
-    return iptunnel_xmit(sock_net(skb->sk), rt, skb, saddr, daddr, IPPROTO_SCLP, 
-			 tos, ttl, df, inner);
+        if (skb->protocol == htons(ETH_P_IP))
+            inner = ip_hdr(skb);
+        else
+            inner = NULL;
+
+        return iptunnel_xmit(sock_net(skb->sk), rt, skb, saddr, daddr,
+                             IPPROTO_SCLP, tos, ttl, df, inner);
+    }
+#endif
 }
 EXPORT_SYMBOL(sclp_tunnel_xmit_skb);
 

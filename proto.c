@@ -1,6 +1,6 @@
 /*
  * proto.c : SCLP protocol
- * 
+ *
  * Copyright 2015 Ryota Kawashima <kawa1983@ieee.org> Nagoya Institute of Technology
  *
  * This program is free software; you can redistribute it and/or modify
@@ -32,46 +32,46 @@ static int sclp_queue_rcv_skb(struct sock *sk, struct sk_buff *skb)
 {
     struct sclp_sock *sp = sclp_sk(sk);
     int rc;
-    
+
     /*
      *	Charge it to the socket, dropping if the queue is full.
      */
     nf_reset(skb);
 
     if (sp->encap_rcv) {
-	/*
-	 * This is an encapsulation socket so pass the skb to
-	 * the socket's sclp_encap_rcv() hook. Otherwise, just
-	 * fall through and pass this up the SCLP socket.
-	 * sp->encap_rcv() returns the following value:
-	 * =0 if skb was successfully passed to the encap
-	 *    handler or was discarded by it.
-	 * >0 if skb should be passed on to SCLP.
-	 * <0 if skb should be resubmitted as proto -N
-	 */
+        /*
+         * This is an encapsulation socket so pass the skb to
+         * the socket's sclp_encap_rcv() hook. Otherwise, just
+         * fall through and pass this up the SCLP socket.
+         * sp->encap_rcv() returns the following value:
+         * =0 if skb was successfully passed to the encap
+         * handler or was discarded by it.
+         * >0 if skb should be passed on to SCLP.
+         * <0 if skb should be resubmitted as proto -N
+         */
 
-	/* if we're overly short, let SCLP handle it */
-	if (sp->encap_rcv != NULL) {
-	    int ret;
+        /* if we're overly short, let SCLP handle it */
+        if (sp->encap_rcv != NULL) {
+            int ret;
 
-	    ret = (*sp->encap_rcv)(sk, skb);
-	    if (ret <= 0)
-		return -ret;
-	}	
-	/* FALLTHROUGH -- it's a normal SCLP Packet */
+            ret = (*sp->encap_rcv)(sk, skb);
+            if (ret <= 0)
+                return -ret;
+        }
+        /* FALLTHROUGH -- it's a normal SCLP Packet */
     }
 
     if (sk_rcvqueues_full(sk, skb, sk->sk_rcvbuf))
-	goto drop;
+        goto drop;
 
     rc = 0;
 
     bh_lock_sock(sk);
     if (! sock_owned_by_user(sk)) {
-	rc = sk->sk_prot->backlog_rcv(sk, skb);
+        rc = sk->sk_prot->backlog_rcv(sk, skb);
     } else if (sk_add_backlog(sk, skb, sk->sk_rcvbuf)) {
-	bh_unlock_sock(sk);
-	goto drop;
+        bh_unlock_sock(sk);
+        goto drop;
     }
     bh_unlock_sock(sk);
 
@@ -86,19 +86,19 @@ drop:
 static int __sclp_handle_fragment(struct sk_buff *skb, struct sclp_fraginfo *frag, off_t frag_off)
 {
     if (unlikely(frag->next_idx != frag_off)) {
-	/* TBD: Reordering */
-	return -EPROTO;
+        /* TBD: Reordering */
+        return -EPROTO;
     } else if (unlikely(frag->next_idx + skb->len > frag->payload_len)) {
-	return -E2BIG;
+        return -E2BIG;
     }
 
     memcpy(skb_put(frag->skb, skb->len), skb->data, skb->len);
     frag->next_idx += skb->len;
 
     if (frag->next_idx != frag->payload_len) {
-	/* Further fragment packets are needed */
-	kfree_skb(skb);
-	return -EAGAIN;
+        /* Further fragment packets are needed */
+        kfree_skb(skb);
+        return -EAGAIN;
     }
 
     /* Reassembling has completed */
@@ -132,18 +132,18 @@ static int sclp_register_fragment(struct sk_buff *skb, __u32 key, __u32 id)
     total_len = skb->len + ntohs(sclph->rem);
 
     if (skb->len >= total_len)
-	return -EPROTO;
+        return -EPROTO;
 
     rem = total_len - skb->len;
 
     if (skb_tailroom(skb) < rem) {
-	if (pskb_expand_head(skb, 0, rem - skb_tailroom(skb), GFP_ATOMIC))
-	    return -ENOMEM;
+        if (pskb_expand_head(skb, 0, rem - skb_tailroom(skb), GFP_ATOMIC))
+            return -ENOMEM;
     }
 
     frag = (struct sclp_fraginfo*)kzalloc(sizeof(struct sclp_fraginfo), GFP_ATOMIC);
     if (unlikely(!frag))
-	return -ENOMEM;
+        return -ENOMEM;
 
     frag->id = id;
     frag->next_idx = skb->len;
@@ -162,17 +162,16 @@ int sclp_check_csum(struct sk_buff *skb)
     off_t offset;
 
     if ((skb->ip_summed == CHECKSUM_UNNECESSARY) ||
-	(skb->ip_summed == CHECKSUM_PARTIAL)) {
-	return 1;
-    }
+        (skb->ip_summed == CHECKSUM_PARTIAL))
+        return 1;
 
     offset = skb_transport_offset(skb);
 
     if (skb->ip_summed == CHECKSUM_COMPLETE) {
-	skb_postpull_rcsum(skb, skb->data, offset);
-	csum = skb->csum;
+        skb_postpull_rcsum(skb, skb->data, offset);
+        csum = skb->csum;
     } else {
-	csum = skb_checksum(skb, offset, skb->len - offset, 0);
+        csum = skb_checksum(skb, offset, skb->len - offset, 0);
     }
 
     return likely(csum_fold(csum) == 0);
@@ -193,28 +192,28 @@ int sclp_rcv(struct sock *sk, struct sk_buff *skb)
 
     err = skb_linearize(skb);
     if (unlikely(err))
-	goto error;
+        goto error;
 
     if (sclp_is_first_segment(sclph)) {
-	if (sclph->rem) {
-	    err = sclp_register_fragment(skb, key, id);
-	    if (unlikely(err))
-		goto error;
-	    return 0;
-	}
+        if (sclph->rem) {
+            err = sclp_register_fragment(skb, key, id);
+            if (unlikely(err))
+                goto error;
+            return 0;
+        }
     } else {
-	struct sclp_fraginfo *frag;
-	frag = find_fraginfo(key, id);
-	if (unlikely(!frag)) {
-	    err = -ENOENT;
-	    goto error;
-	}
+        struct sclp_fraginfo *frag;
+        frag = find_fraginfo(key, id);
+        if (unlikely(!frag)) {
+            err = -ENOENT;
+            goto error;
+        }
 
-	err = sclp_handle_fragment(sk, skb, frag);
-	if (err == -EAGAIN)
-	    return 0;
-	else if (err)
-	    goto error;
+        err = sclp_handle_fragment(sk, skb, frag);
+        if (err == -EAGAIN)
+            return 0;
+        else if (err)
+            goto error;
     }
 
     return sclp_queue_rcv_skb(sk, skb);
@@ -243,15 +242,60 @@ static struct pernet_operations sclp_ops = {
 };
 
 
+#ifdef UDP_HTABLE_SIZE
+
 static void sclp_table_init(struct udp_table *table)
 {
     int i;
 
     for (i = 0; i < UDP_HTABLE_SIZE; i++) {
-	INIT_HLIST_NULLS_HEAD(&table->hash[i].head, i);
-	spin_lock_init(&table->hash[i].lock);
+        INIT_HLIST_NULLS_HEAD(&table->hash[i].head, i);
+        spin_lock_init(&table->hash[i].lock);
     }
 }
+
+
+static void sclp_table_exit(struct udp_table *table)
+{
+
+}
+
+#else
+
+static void __init sclp_table_init(struct udp_table *table)
+{
+	int i;
+	size_t hash_size;
+
+	table->mask = udp_table.mask;
+	table->log  = udp_table.log;
+
+	hash_size = (table->mask + 1) * sizeof(struct udp_hslot);
+
+	table->hash = kmalloc(2 * hash_size, GFP_ATOMIC);
+	BUG_ON(!table->hash);
+
+	table->hash2 = table->hash + (table->mask + 1);
+	for (i = 0; i <= table->mask; i++) {
+		INIT_HLIST_NULLS_HEAD(&table->hash[i].head, i);
+		table->hash[i].count = 0;
+		spin_lock_init(&table->hash[i].lock);
+	}
+	for (i = 0; i <= table->mask; i++) {
+		INIT_HLIST_NULLS_HEAD(&table->hash2[i].head, i);
+		table->hash2[i].count = 0;
+		spin_lock_init(&table->hash2[i].lock);
+	}
+}
+
+
+static void __exit sclp_table_exit(struct udp_table *table)
+{
+	if (table->hash)
+		kfree(table->hash);
+}
+
+#endif
 
 
 static int __init sclp_init(void)
@@ -264,15 +308,15 @@ static int __init sclp_init(void)
 
     err = sclp4_init();
     if (err)
-	goto out;
+        goto out_table_exit;
 
     err = sclp_offload_init();
     if (err)
-	goto out_v4_exit;
+        goto out_v4_exit;
 
     err = register_pernet_subsys(&sclp_ops);
     if (err)
-	goto out_offload_exit;
+        goto out_offload_exit;
 
     return 0;
 
@@ -282,7 +326,9 @@ out_offload_exit:
 out_v4_exit:
     sclp4_exit();
 
-out:
+out_table_exit:
+	sclp_table_exit(&sclp_table);
+
     return err;
 }
 
@@ -296,6 +342,8 @@ static void __exit sclp_exit(void)
     sclp_offload_exit();
 
     sclp4_exit();
+
+	sclp_table_exit(&sclp_table);
 
     pr_info("[sclp] The module has been removed\n");
 }

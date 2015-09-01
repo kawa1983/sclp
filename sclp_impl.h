@@ -1,6 +1,6 @@
 /*
  * sclp_impl.h : Common use functions
- * 
+ *
  * Copyright 2015 Ryota Kawashima <kawa1983@ieee.org> Nagoya Institute of Technology
  *
  * This program is free software; you can redistribute it and/or modify
@@ -32,26 +32,27 @@ extern struct udp_table sclp_table;
 extern void sclp_close(struct sock *sk, long timeout);
 
 extern int sclp_setsockopt(struct sock *sk, int level, int optname,
-			   char __user *optval, unsigned int optlen);
+						   char __user *optval, unsigned int optlen);
 
 extern int sclp_getsockopt(struct sock *sk, int level, int optname,
-			   char __user *optval, int __user *optlen);
+						   char __user *optval, int __user *optlen);
 
 #ifdef CONFIG_COMPAT
 extern int compat_sclp_setsockopt(struct sock *sk, int level, int optname,
-				  char __user *optval, unsigned int optlen);
+								  char __user *optval, unsigned int optlen);
 
 extern int compat_sclp_getsockopt(struct sock *sk, int level, int optname,
-				  char __user *optval, int __user *optlen);
+								  char __user *optval, int __user *optlen);
 #endif
 
 extern int sclp_ioctl(struct sock *sk, int cmd, unsigned long arg);
 
 extern void sclp_set_header(struct sk_buff *skb, __be16 dport, __be16 sport,  size_t l3_hlen, size_t mtu);
 
-extern int sclp_output(struct sock *sk, struct dst_entry *entry, __be16 dport, __be16 sport, 
-		       size_t l3_hlen, struct msghdr *msg, size_t len,
-		       int (*xmit_skb)(struct sk_buff *skb, struct sock *sk, struct dst_entry *entry));
+extern int sclp_output(struct sock *sk, struct dst_entry *entry, __be16 dport,
+					   __be16 sport, size_t l3_hlen, struct msghdr *msg, size_t len,
+					   int (*xmit_skb)(struct sk_buff *skb, struct sock *sk, void *argp),
+					   void *argp);
 
 extern int sclp_check_csum(struct sk_buff *skb);
 

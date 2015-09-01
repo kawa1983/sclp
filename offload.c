@@ -1,6 +1,6 @@
 /*
  * offload.c : GSO/GRO processing of SCLP
- * 
+ *
  * Copyright 2014-2015 Ryota Kawashima <kawa1983@ieee.org> Nagoya Institute of Technology
  *
  * This program is free software; you can redistribute it and/or modify
@@ -18,6 +18,7 @@
  * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
+#include <linux/version.h>
 #include <linux/module.h>
 #include <linux/kernel.h>
 #include <linux/skbuff.h>
@@ -28,16 +29,20 @@
 
 static int sclp_gso_send_check(struct sk_buff *skb)
 {
-    if (! pskb_may_pull(skb, sizeof(struct sclphdr))) {
-	return -EINVAL;
-    }
+    if (! pskb_may_pull(skb, sizeof(struct sclphdr)))
+        return -EINVAL;
 
     return 0;
 }
 
 
 static struct sk_buff *sclp_gso_segment(struct sk_buff *skb,
-					int features)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(3,3,0)
+                                        u32 features
+#else
+                                        netdev_features_t features
+#endif
+                                       )
 {
     struct sk_buff *segs;
     struct sclphdr *sclph;
@@ -47,9 +52,8 @@ static struct sk_buff *sclp_gso_segment(struct sk_buff *skb,
 
     segs = ERR_PTR(-EINVAL);
 
-    if (! pskb_may_pull(skb, sizeof(struct sclphdr))) {
-	goto out;
-    }
+    if (! pskb_may_pull(skb, sizeof(struct sclphdr)))
+        goto out;
 
     sclph = sclp_hdr(skb);
 
@@ -57,9 +61,8 @@ static struct sk_buff *sclp_gso_segment(struct sk_buff *skb,
 
     mss = skb_shinfo(skb)->gso_size;
 
-    if (unlikely(skb->len <= mss)) {
-	goto out;
-    }
+    if (unlikely(skb->len <= mss))
+        goto out;
 
     rem = skb->len - mss;
 
@@ -67,9 +70,8 @@ static struct sk_buff *sclp_gso_segment(struct sk_buff *skb,
 
     /* Do segmentation */
     segs = skb_segment(skb, features);
-    if (IS_ERR(segs)) {
-	goto out;
-    }
+    if (IS_ERR(segs))
+        goto out;
 
     skb = segs;
 
@@ -77,33 +79,32 @@ static struct sk_buff *sclp_gso_segment(struct sk_buff *skb,
     sclp_set_first_segment(sclp_hdr(skb));
 
     while (skb) {
-	sclph        = sclp_hdr(skb);
-	sclph->rem   = htons(rem);
-	sclph->check = 0;
+        sclph        = sclp_hdr(skb);
+        sclph->rem   = htons(rem);
+        sclph->check = 0;
 
-	offset = skb_transport_offset(skb);
+        offset = skb_transport_offset(skb);
 
-	/* Calculate the checksum */
-	if (skb->ip_summed == CHECKSUM_PARTIAL) {
+        /* Calculate the checksum */
+        if (skb->ip_summed == CHECKSUM_PARTIAL) {
 #if 0
-	    skb->csum_start  = skb_headroom(skb) + offset;
-	    skb->csum_offset = offsetof(struct sclphdr, check);
+            skb->csum_start  = skb_headroom(skb) + offset;
+            skb->csum_offset = offsetof(struct sclphdr, check);
 #else
-	    sclph->check = csum_fold(skb_checksum(skb, offset, skb->len - offset, 0));
-	    skb->ip_summed = CHECKSUM_UNNECESSARY;
+            sclph->check = csum_fold(skb_checksum(skb, offset, skb->len - offset, 0));
+            skb->ip_summed = CHECKSUM_UNNECESSARY;
 #endif
-	} else if (skb->ip_summed == CHECKSUM_NONE) {
-	    sclph->check = csum_fold(skb_checksum(skb, offset, skb->len - offset, 0));
-	    skb->ip_summed = CHECKSUM_UNNECESSARY;
-	}
+        } else if (skb->ip_summed == CHECKSUM_NONE) {
+            sclph->check = csum_fold(skb_checksum(skb, offset, skb->len - offset, 0));
+            skb->ip_summed = CHECKSUM_UNNECESSARY;
+        }
 
-	if (rem >= mss) {
-	    rem -= mss;
-	} else {
-	    rem = 0;
-	}
+        if (rem >= mss)
+            rem -= mss;
+        else
+            rem = 0;
 
-	skb = skb->next;
+        skb = skb->next;
     }
 
 out:
@@ -131,11 +132,11 @@ struct sk_buff **sclp_gro_receive_impl(struct sk_buff **head, struct sk_buff *sk
 
     sclph = skb_gro_header_fast(skb, offset);
     if (skb_gro_header_hard(skb, hlen)) {
-	sclph = skb_gro_header_slow(skb, hlen, offset);
-	if (unlikely(! sclph)) {
-	    flush = 1;
-	    goto out;
-	}
+        sclph = skb_gro_header_slow(skb, hlen, offset);
+        if (unlikely(! sclph)) {
+            flush = 1;
+            goto out;
+        }
     }
 
     skb_gro_pull(skb, sizeof(struct sclphdr));
@@ -144,17 +145,16 @@ struct sk_buff **sclp_gro_receive_impl(struct sk_buff **head, struct sk_buff *sk
     rem = sclph->rem;
 
     for (; (pskb = *head); head = &pskb->next) {
-	if (! NAPI_GRO_CB(pskb)->same_flow) {
-	    continue;
-	}
+        if (! NAPI_GRO_CB(pskb)->same_flow)
+            continue;
 
-	sclph2 = sclp_hdr(pskb);
+        sclph2 = sclp_hdr(pskb);
 
-	if (*(u32*)&sclph->source != *(u32*)&sclph2->source) {
-	    NAPI_GRO_CB(pskb)->same_flow = 0;
-	    continue;
-	}
-	goto found;
+        if (*(u32*)&sclph->source != *(u32*)&sclph2->source) {
+            NAPI_GRO_CB(pskb)->same_flow = 0;
+            continue;
+        }
+        goto found;
     }
     mss = 1;
     goto out_check_final;
@@ -169,8 +169,8 @@ found:
     flush |= (ntohs(sclph->rem) + skb_gro_len(skb)) ^ ntohs(sclph2->rem);
 
     if (flush || skb_gro_receive(head, skb)) {
-	mss = 1;
-	goto out_check_final;
+        mss = 1;
+        goto out_check_final;
     }
 
     pskb = *head;
@@ -180,9 +180,8 @@ found:
 out_check_final:
     flush = len < mss;
 
-    if (pskb && (! NAPI_GRO_CB(skb)->same_flow || flush)) {
-	ppskb = head;
-    }
+    if (pskb && (! NAPI_GRO_CB(skb)->same_flow || flush))
+        ppskb = head;
 
 out:
     NAPI_GRO_CB(skb)->flush |= flush;
@@ -197,21 +196,19 @@ struct sk_buff **sclp_gro_receive(struct sk_buff **head, struct sk_buff *skb)
 
     switch (skb->ip_summed) {
     case CHECKSUM_COMPLETE:
-	sum = csum_fold(skb->csum);
-	if (sum != 0) {
-	    goto flush;
-	}
-	skb->ip_summed = CHECKSUM_UNNECESSARY;
-	break;
+        sum = csum_fold(skb->csum);
+        if (sum != 0)
+            goto flush;
+        skb->ip_summed = CHECKSUM_UNNECESSARY;
+        break;
     case CHECKSUM_NONE:
-	sum = csum_fold(skb_checksum(skb, skb_gro_offset(skb), skb_gro_len(skb), 0));
-	if (sum != 0) {
-	    goto flush;
-	}
-	skb->ip_summed = CHECKSUM_UNNECESSARY;
-	break;
+        sum = csum_fold(skb_checksum(skb, skb_gro_offset(skb), skb_gro_len(skb), 0));
+        if (sum != 0)
+            goto flush;
+        skb->ip_summed = CHECKSUM_UNNECESSARY;
+        break;
     default:
-	break;
+        break;
     }
 
     return sclp_gro_receive_impl(head, skb);
@@ -222,7 +219,7 @@ flush:
 }
 
 
-int sclp_gro_complete(struct sk_buff *skb)
+static int __sclp_gro_complete(struct sk_buff *skb)
 {
     struct sclphdr *sclph;
 
@@ -241,19 +238,41 @@ int sclp_gro_complete(struct sk_buff *skb)
     return 0;
 }
 
+#if (!defined(RHEL_RELEASE_CODE) && LINUX_VERSION_CODE < KERNEL_VERSION(3,14,0)) || \
+    (defined(RHEL_RELEASE_CODE) && RHEL_RELEASE_CODE < RHEL_RELEASE_VERSION(7,0))
+static int sclp_gro_complete(struct sk_buff *skb)
+{
+    return __sclp_gro_complete(skb);
+}
+#else
+static int sclp_gro_complete(struct sk_buff *skb, int shoff)
+{
+    return __sclp_gro_complete(skb);
+}
+#endif
+
 
 static const struct net_offload sclp_offload = {
+#if LINUX_VERSION_CODE < KERNEL_VERSION(3,8,0)
     .gso_send_check = sclp_gso_send_check,
     .gso_segment    = sclp_gso_segment,
     .gro_receive    = sclp_gro_receive,
     .gro_complete   = sclp_gro_complete,
+#else
+    .callbacks = {
+                    .gso_send_check = sclp_gso_send_check,
+                    .gso_segment    = sclp_gso_segment,
+                    .gro_receive    = sclp_gro_receive,
+                    .gro_complete   = sclp_gro_complete,
+                 },
+#endif
 };
 
 
 int __init sclp_offload_init(void)
 {
     if (inet_add_offload(&sclp_offload, IPPROTO_SCLP) != 0)
-	goto err;
+        goto err;
 
     pr_info("[sclp] GSO/GRO support\n");
 
